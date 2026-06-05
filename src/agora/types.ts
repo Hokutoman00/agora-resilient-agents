@@ -11,7 +11,7 @@ export type FailureKind =
   | 'lost_agent'
   | 'human_boundary';
 
-export type TaskStatus = 'pending' | 'running' | 'blocked' | 'partial' | 'completed' | 'failed';
+export type TaskStatus = 'pending' | 'running' | 'blocked' | 'partial' | 'completed' | 'degraded' | 'failed';
 
 export interface AgentNode {
   id: string;
@@ -31,6 +31,7 @@ export interface TaskRecord {
   completedParts: string[];
   failedParts: string[];
   evidence: string[];
+  artifacts?: Record<string, string>;
   updatedAt: string;
 }
 
@@ -54,7 +55,14 @@ export interface HandoffReceipt {
   completedParts: string[];
   failedParts: string[];
   recoveryStatus: 'degraded_mode' | 'reassigned' | 'primary_restored';
+  gateway?: GatewayEvidence;
   createdAt: string;
+}
+
+export interface GatewayEvidence {
+  gateway_mode: 'live' | 'simulation';
+  model_used: string;
+  fallback_triggered: boolean;
 }
 
 export interface AgoraState {

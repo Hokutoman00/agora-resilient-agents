@@ -86,12 +86,43 @@ export class TaskLedger {
     this.event('success', `handoff receipt ${receipt.id}: ${receipt.failedAgentId} -> ${receipt.takeoverAgentId}`, receipt.takeoverAgentId, receipt.taskId, 'handoff');
   }
 
+  startTask(taskId: string, title: string, assignedAgentId = 'planner-1'): void {
+    const task = this.task(taskId);
+    task.title = title;
+    task.status = 'running';
+    task.assignedAgentId = assignedAgentId;
+    task.previousAgentId = undefined;
+    task.completedParts = [];
+    task.failedParts = [];
+    task.evidence = [`task requested: ${title}`];
+    task.artifacts = {};
+    task.updatedAt = now();
+    this.event('info', `task started: ${title}`, assignedAgentId, taskId, 'task');
+  }
+
+  saveArtifact(taskId: string, agentId: string, key: string, value: string): void {
+    const task = this.task(taskId);
+    task.artifacts ??= {};
+    task.artifacts[`${agentId}:${key}`] = value;
+    task.updatedAt = now();
+    const preview = value.slice(0, 60).replace(/\s+/g, ' ');
+    this.event('info', `artifact saved: ${key} (${value.length} chars) - "${preview}..."`, agentId, taskId, 'artifact');
+  }
+
   complete(taskId: string, summary: string): void {
     const task = this.task(taskId);
     task.status = 'completed';
-    task.completedParts.push(summary);
+    if (!task.completedParts.includes(summary)) task.completedParts.push(summary);
     task.updatedAt = now();
     this.event('success', `task completed: ${summary}`, task.assignedAgentId, taskId, 'task');
+  }
+
+  degrade(taskId: string, summary: string): void {
+    const task = this.task(taskId);
+    task.status = 'degraded';
+    if (!task.failedParts.includes(summary)) task.failedParts.push(summary);
+    task.updatedAt = now();
+    this.event('warn', `task degraded: ${summary}`, task.assignedAgentId, taskId, 'task');
   }
 
   private agent(id: string): AgentNode {

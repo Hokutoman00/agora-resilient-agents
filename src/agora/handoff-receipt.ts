@@ -7,6 +7,7 @@ export function buildHandoffReceipt(input: {
   failureKind: FailureKind;
   evidenceSeen: string[];
   recoveryStatus?: HandoffReceipt['recoveryStatus'];
+  gateway?: HandoffReceipt['gateway'];
 }): HandoffReceipt {
   return {
     id: `agora-handoff-${Date.now()}`,
@@ -18,6 +19,7 @@ export function buildHandoffReceipt(input: {
     completedParts: input.task.completedParts,
     failedParts: [...new Set([...input.task.failedParts, input.failureKind])],
     recoveryStatus: input.recoveryStatus ?? 'reassigned',
+    gateway: input.gateway,
     createdAt: new Date().toISOString(),
   };
 }
