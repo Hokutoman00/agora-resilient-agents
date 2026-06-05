@@ -7,11 +7,40 @@
 
 > **When one agent falls, the mesh carries on.**
 
-On **April 20, 2026**, OpenAI went dark for hours. On **March 2-3, 2026**, Claude went down twice in 24 hours. Most "resilient" systems fail at the single-agent level — if the one agent running your task crashes, the whole pipeline crashes with it.
+## Why AGORA exists — the two layers of resilience
 
-AGORA solves the next layer: **multi-agent coordination resilience**. When a worker agent fails mid-task, AGORA's watchdog detects it, reconstructs the task state from the shared ledger, and hands off to a recovery agent — all without losing the work already done. Every recovery is proven by a signed **Handoff Receipt**.
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  LAYER 1 — Provider Resilience (Aegis, 1st place DevNetwork)   │
+│                                                                 │
+│  User → TrueFoundry AI Gateway → AWS Bedrock                   │
+│          └─ L0 Hedge ─ L1 Retry ─ L2 Model fallback ─         │
+│             L3 Provider fallback ─ L4 Semantic error ─         │
+│             L5 Graceful degradation ─ L6 Continuous chaos       │
+│                                                                 │
+│  Handles: rate limits, model outages, provider failures         │
+│  Proof: Aegis Receipt (signed, per-layer trace)                 │
+└─────────────────────────────────────────────────────────────────┘
+         ↓  Even with L1-L6, an individual agent can still fail
+┌─────────────────────────────────────────────────────────────────┐
+│  LAYER 2 — Workflow Resilience (AGORA, this submission)        │
+│                                                                 │
+│  Planner → Researcher → Builder ← Watchdog                     │
+│                            ↓                                   │
+│                         Shared Ledger (context survives)        │
+│                            ↓                                   │
+│                    Recovery Coordinator                         │
+│                            ↓                                   │
+│                         Verifier (rubric quality gate)         │
+│                                                                 │
+│  Handles: agent crashes, task stalls, bad outputs              │
+│  Proof: Handoff Receipt (who failed, what was saved, how)      │
+└─────────────────────────────────────────────────────────────────┘
+```
 
-Built on **TrueFoundry AI Gateway** + **AWS Bedrock**, with 7-layer single-agent resilience inherited from [Aegis](https://devpost.com/software/aegis-resilient-agents) (1st place, DevNetwork AI+ML 2026 TrueFoundry track).
+**AGORA extends [Aegis](https://devpost.com/software/aegis-resilient-agents)** (1st place, DevNetwork AI+ML 2026 TrueFoundry track) from single-agent API resilience to multi-agent workflow resilience. When a worker agent fails mid-task — even after TF Gateway has already done its job — AGORA's watchdog detects it, reconstructs the task state from the shared ledger, and hands off to a recovery agent without losing completed work. Every recovery is proven by a signed **Handoff Receipt** containing TF Gateway evidence (`gateway_mode`, `fallback_triggered`, `model_used`).
+
+Built on **TrueFoundry AI Gateway** + **AWS Bedrock**.
 
 ---
 
