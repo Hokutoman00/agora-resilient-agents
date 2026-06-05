@@ -5,18 +5,18 @@ import type { AgoraState, FailureKind, TaskRecord } from './types.js';
 
 const app = new Hono();
 const DEFAULT_TASK =
-  'A major AI API provider (OpenAI-compatible) is experiencing an outage. Analyze the top 3 competing AI providers also affected, compare their resilience postures, and draft a customer communication plan.';
+  'The primary AI model provider for our customer support agent is unavailable. Identify 3 competitor products likely affected by the same AI outage and draft a customer communication plan.';
 const TASK_PRESETS = [
   {
-    label: '競合影響分析',
+    label: 'Provider Outage Impact',
     task: DEFAULT_TASK,
   },
   {
-    label: 'PR/コードレビュー',
+    label: 'PR Risk Review',
     task: 'A critical PR must ship today. Review the change for outage risks, missing tests, and customer-impacting regressions.',
   },
   {
-    label: 'インシデント対応計画',
+    label: 'Incident Response Plan',
     task: 'A rate limit incident is affecting AI responses. Draft an incident response plan and customer status update.',
   },
 ];
