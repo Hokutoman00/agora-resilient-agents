@@ -115,6 +115,10 @@ Open the dashboard, then click any chaos button:
 
 For judging, click **Judge Demo** once. It deterministically injects a Builder failure, recovers through the shared ledger, runs the Critic loop, records the Verifier gate, and produces a downloadable **Judge Packet** with a 0-100 readiness score.
 
+![AGORA Judge Demo dashboard](./demo/final-assets/agora-dashboard-judge-demo.png)
+
+The saved judge packet used for the final demo proof is available at [`demo/final-assets/judge-packet.json`](./demo/final-assets/judge-packet.json).
+
 The dashboard auto-refreshes every 1.5 seconds. No page reload needed.
 
 ### What the gateway evidence proves

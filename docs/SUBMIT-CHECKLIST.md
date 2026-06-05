@@ -10,9 +10,9 @@
 - [x] README.md → AGORA にリブランド完了
 - [x] SUBMISSION-DRAFT.md 作成（提出文面草案）
 - [x] DASHBOARD-DESIGN-SPEC.md 作成（Codex に渡し済み）
-- [ ] DEMO-SCRIPT.md → AGORA 版に更新
-- [ ] GitHub リポジトリ作成・公開（`Hokutoman00/agora-resilient-agents`）
-- [ ] git init → push
+- [x] DEMO-SCRIPT.md → AGORA 版に更新
+- [x] GitHub リポジトリ作成・公開（`Hokutoman00/agora-resilient-agents`）
+- [x] git init → push
 
 ## Codex 担当（実装）
 
@@ -20,11 +20,14 @@
 - [x] Dashboard server（port 8787）
 - [x] 4種類の Chaos ボタン + Reset + 自動ポーリング
 - [x] bun test 105 pass
-- [ ] ダッシュボード フルリデザイン（DASHBOARD-DESIGN-SPEC.md 参照）
+- [x] ダッシュボード提出向け改善（Judge Demo / Judging Evidence / Critic Loop / overflow対策）
 
 ## ユーザー担当（手作業必須）
 
 ### 1. デモ動画録画・YouTube アップロード（~15分）
+- [x] ローカル短尺MP4素材生成: `demo/final-assets/agora-demo-short.mp4`
+- [x] Judge Demoスクリーンショット生成: `demo/final-assets/agora-dashboard-judge-demo.png`
+- [x] Judge Packet JSON保存: `demo/final-assets/judge-packet.json`
 - [ ] http://localhost:8787 を開く
 - [ ] Reset → Timeout ボタンの順に操作しながら画面録画（30秒〜1分）
 - [ ] Lost Agent シナリオも録画

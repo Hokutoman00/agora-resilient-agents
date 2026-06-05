@@ -144,7 +144,9 @@ export async function runAgentTask(topic: string): Promise<RunResult> {
     const recoveryGateway = gatewayEvidence(true);
     activeLedger.event(
       'success',
-      `TF Gateway fallback chain engaged: ${recoveryGateway.model_used} via AWS Bedrock fallback`,
+      recoveryGateway.gateway_mode === 'live'
+        ? `TF Gateway fallback evidence recorded: ${recoveryGateway.model_used}`
+        : `Simulated fallback path recorded for judge demo: ${recoveryGateway.model_used}`,
       'recovery-1',
       TASK_ID,
       'gateway',

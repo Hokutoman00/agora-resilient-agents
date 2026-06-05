@@ -122,6 +122,9 @@ function renderDashboard(state: DashboardState): string {
   const startedAt = state.events[0]?.at ?? new Date().toISOString();
   const modeLabel = stateGatewayMode(state) === 'live' ? 'LIVE (TF Gateway)' : 'SIMULATION';
   const modeClass = stateGatewayMode(state) === 'live' ? 'live-mode' : 'sim-mode';
+  const platformLabel = stateGatewayMode(state) === 'live'
+    ? 'TrueFoundry LLM Gateway path active'
+    : 'Simulation mode: local-compatible MCP and Guardrail evidence';
   const proof = proofLine(state);
   const agentCards = state.agents.map(a => `<article class="agent ${a.status}" data-agent-id="${a.id}">
     <div>
@@ -280,7 +283,7 @@ function renderDashboard(state: DashboardState): string {
     <h1>AGORA</h1>
     <div class="header-right">
       <div class="live ${modeClass}"><i></i>${modeLabel}</div>
-      <div class="platform">Powered by TrueFoundry AI Gateway + AWS Bedrock fallback</div>
+      <div class="platform">${escapeHtml(platformLabel)}</div>
     </div>
   </header>
   <div class="proof ${proof.className}" id="proof"><span>${escapeHtml(proof.text)}</span></div>
@@ -357,7 +360,7 @@ function renderDashboard(state: DashboardState): string {
       ['gateway mode', r.gateway?.gateway_mode || 'unknown'],
       ['model used', r.gateway?.model_used || 'unknown'],
       ['fallback triggered', String(Boolean(r.gateway?.fallback_triggered))],
-      ['fallback meaning', r.gateway?.fallback_triggered ? 'TF Gateway fallback chain engaged; AWS Bedrock carried the request' : 'primary route or simulation path'],
+      ['fallback meaning', fallbackMeaning(r.gateway)],
       ['completed parts', (r.completedParts || []).join(', ') || 'none'],
       ['failed parts', (r.failedParts || []).join(', ') || 'none'],
       ['evidence seen', (r.evidenceSeen || []).join(' / ') || 'none'],
@@ -369,7 +372,16 @@ function renderDashboard(state: DashboardState): string {
       return { className: '', text: 'STANDBY: run task, then inject provider failure' };
     };
     const failureLabel = kind => ({ lost_agent: 'Provider Outage', timeout: 'Rate Limit Exceeded', bad_output: 'Malformed Response', stale_context: 'Context Window Exceeded' }[kind] || kind || 'provider failure');
-    const gatewaySuffix = gateway => gateway?.fallback_triggered ? ' via TF Gateway + AWS Bedrock fallback' : '';
+    const fallbackMeaning = gateway => {
+      if (!gateway?.fallback_triggered) return 'primary route or simulation path';
+      return gateway.gateway_mode === 'live'
+        ? 'live TF Gateway fallback evidence recorded'
+        : 'deterministic simulated fallback path used for judge demo';
+    };
+    const gatewaySuffix = gateway => {
+      if (!gateway?.fallback_triggered) return '';
+      return gateway.gateway_mode === 'live' ? ' via TF Gateway fallback evidence' : ' via simulated fallback path';
+    };
     const proofFromState = state => {
       const task = state.tasks?.[0];
       const receipt = state.receipts?.[state.receipts.length - 1];
@@ -611,12 +623,7 @@ function renderReceipt(receipt: AgoraState['receipts'][number]): string {
     ['gateway mode', receipt.gateway?.gateway_mode ?? 'unknown'],
     ['model used', receipt.gateway?.model_used ?? 'unknown'],
     ['fallback triggered', String(Boolean(receipt.gateway?.fallback_triggered))],
-    [
-      'fallback meaning',
-      receipt.gateway?.fallback_triggered
-        ? 'TF Gateway fallback chain engaged; AWS Bedrock carried the request'
-        : 'primary route or simulation path',
-    ],
+    ['fallback meaning', fallbackMeaning(receipt.gateway)],
     ['completed parts', receipt.completedParts.join(', ') || 'none'],
     ['failed parts', receipt.failedParts.join(', ') || 'none'],
     ['evidence seen', receipt.evidenceSeen.join(' / ') || 'none'],
@@ -650,7 +657,15 @@ function proofLine(state: AgoraState): { className: string; text: string } {
 }
 
 function gatewaySuffix(gateway: AgoraState['receipts'][number]['gateway']): string {
-  return gateway?.fallback_triggered ? ' via TF Gateway + AWS Bedrock fallback' : '';
+  if (!gateway?.fallback_triggered) return '';
+  return gateway.gateway_mode === 'live' ? ' via TF Gateway fallback evidence' : ' via simulated fallback path';
+}
+
+function fallbackMeaning(gateway: AgoraState['receipts'][number]['gateway']): string {
+  if (!gateway?.fallback_triggered) return 'primary route or simulation path';
+  return gateway.gateway_mode === 'live'
+    ? 'live TF Gateway fallback evidence recorded'
+    : 'deterministic simulated fallback path used for judge demo';
 }
 
 function chaosIndicator(control: ReturnType<typeof getChaosControlState>): { className: string; text: string } {
