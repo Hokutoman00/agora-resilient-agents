@@ -1,0 +1,40 @@
+[2026-06-01T17:06:35.756Z] [demo              ] scenario=bedrock_throttling_cross_family_fallback
+[2026-06-01T17:06:35.756Z] [user_request      ] prompt="Summarize the LiteLLM issue #24320 in one sentence."
+[2026-06-01T17:06:35.757Z] [guardrails.input  ] decision=allow hits=0
+[2026-06-01T17:06:35.757Z] [routing           ] primary=bedrock/anthropic.claude-3-5-sonnet-20241022-v2:0 family=anthropic
+[2026-06-01T17:06:35.757Z] [tf_l1_l2_l3       ] primary returned 400 — TF default fallback codes [401,403,408,429,500,502,503] do not include 400 → pass-through
+[2026-06-01T17:06:35.757Z] [aegis_l4          ] rule=bedrock.throttling.structured class=bedrock_throttling action=fallback_provider
+[2026-06-01T17:06:35.757Z] [aegis_l3_cross    ] same-family=anthropic → cross-family fallback=bedrock/meta.llama3-8b-instruct-v1:0 (family=meta)
+[2026-06-01T17:06:35.757Z] [tf_l1_l2_l3       ] fallback=bedrock/meta.llama3-8b-instruct-v1:0 returned 200 OK (480ms TTFT simulated)
+[2026-06-01T17:06:35.757Z] [guardrails.output ] service_errors=1 fail_closed_decision=block
+[2026-06-01T17:06:35.757Z] [demo              ] would_be_response="LiteLLM issue #24320 documents how default gateway fallback rules miss 400-class errors like credit_balance_too_low because they only fire on status codes in [401,403,408,429,500,502,503]."
+[2026-06-01T17:06:35.757Z] [demo              ] final_decision=block (fail-closed for output)
+[2026-06-01T17:06:35.757Z] [aegis_receipt     ] attached
+
+DEMO OUTCOME: success
+Receipt: {
+  "receipt_version": "1.0",
+  "request_id": "req_1780333595757",
+  "primary_model": "bedrock/anthropic.claude-3-5-sonnet-20241022-v2:0",
+  "fallback_model": "bedrock/meta.llama3-8b-instruct-v1:0",
+  "layers_fired": [
+    "guardrails.input",
+    "tf_l1_l2_l3",
+    "aegis_l4",
+    "aegis_l3_cross",
+    "guardrails.output"
+  ],
+  "l4_match": {
+    "rule_id": "bedrock.throttling.structured",
+    "rule_source": "default",
+    "action_taken": "fallback_provider",
+    "message_class": "bedrock_throttling"
+  },
+  "cross_family_swap": {
+    "from_family": "anthropic",
+    "to_family": "meta"
+  },
+  "guardrails_decision": "block",
+  "last_chaos_survival_seconds_ago": 47,
+  "trace_event_count": 11
+}

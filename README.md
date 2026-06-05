@@ -1,0 +1,186 @@
+# AGORA — Adaptive General-purpose Orchestration for Resilient Agents
+
+[![Hackathon](https://img.shields.io/badge/TF_Resilient_Agents-Online_Hackathon_2026-blue)](https://www.builderbase.com/v2/event/resilient-agents-online-hackathon)
+[![Challenge](https://img.shields.io/badge/TrueFoundry-Resilient_Agents_Online-orange)](https://www.builderbase.com/v2/event/resilient-agents-online-hackathon)
+[![Tests](https://img.shields.io/badge/tests-101%20passing-brightgreen)](./tests/unit)
+[![License](https://img.shields.io/badge/license-MIT-green)](./LICENSE)
+
+> **When one agent falls, the mesh carries on.**
+
+On **April 20, 2026**, OpenAI went dark for hours. On **March 2-3, 2026**, Claude went down twice in 24 hours. Most "resilient" systems fail at the single-agent level — if the one agent running your task crashes, the whole pipeline crashes with it.
+
+AGORA solves the next layer: **multi-agent coordination resilience**. When a worker agent fails mid-task, AGORA's watchdog detects it, reconstructs the task state from the shared ledger, and hands off to a recovery agent — all without losing the work already done. Every recovery is proven by a signed **Handoff Receipt**.
+
+Built on **TrueFoundry AI Gateway** + **AWS Bedrock**, with 7-layer single-agent resilience inherited from [Aegis](https://devpost.com/software/aegis-resilient-agents) (1st place, DevNetwork AI+ML 2026 TrueFoundry track).
+
+---
+
+## The two resilience layers
+
+### Layer 1 — API resilience (inherited from Aegis, 7 sub-layers)
+
+| Sub-layer | Job | Owner |
+|------:|---|---|
+| **L0** | **Hedge** parallel requests on TTFT > p95 | AGORA |
+| **L1** | **Retry** with exponential backoff + jitter | TF Gateway |
+| **L2** | **Model fallback** within provider | TF Virtual Model |
+| **L3** | **Provider fallback** across providers | TF Virtual Model |
+| **L4** | **Semantic error fallback** — catches `credit_balance_too_low` (400) that gateways miss | AGORA |
+| **L5** | **Graceful degradation contract** — budget / SLA / quality | AGORA |
+| **L6** | **Continuous self-chaos** in shadow | AGORA |
+
+### Layer 2 — Multi-agent coordination resilience (new in AGORA)
+
+| Component | Job |
+|---|---|
+| **Agent Mesh** | 6 specialized agents: Planner / Researcher / Builder / Verifier / Critic / Recovery Coordinator |
+| **Shared Blackboard** (Task Ledger) | Agents write progress, evidence, and partial results to a shared ledger — context survives any single agent dying |
+| **Watchdog** | Continuously monitors agent health; detects timeout / bad\_output / lost\_agent / stale\_context |
+| **Recovery Engine** | On failure: reconstruct task state from ledger → reassign to Recovery Coordinator → resume |
+| **Handoff Receipt** | Signed record of who failed, what was completed, what evidence was seen, and how recovery proceeded |
+| **Failure Taxonomy** | `timeout` / `bad_output` / `contradiction` / `stale_context` / `tool_error` / `lost_agent` / `human_boundary` |
+
+---
+
+## The differentiator AGORA inherits: L4 catches what every gateway misses
+
+```
+[2026-05-10 02:18:32]  user → AGORA → TF Virtual Model "claude-with-fallback"
+[AGORA L0]             hedge fired (p95 = 1.5s exceeded)
+[TF L1/L2]             anthropic/claude-sonnet-4.5 → 400 credit_balance_too_low
+[TF L3]                fallback codes [401,403,...,503] don't include 400 → pass-through
+[AGORA L4]             error.type=invalid_request_error + message="credit balance"
+                       → reclassified as fallback-eligible
+                       → routed to openai/gpt-4.1
+[OpenAI]               200 OK, 320ms TTFT
+[AGORA L0]             cancel hedge (cost saved: ~$0.0001)
+[Handoff Receipt]      attached to response
+```
+
+`credit_balance_too_low` is what brings down most LLM apps the moment a credit card expires. LiteLLM, OpenRouter, and TrueFoundry's default fallback all silently pass it through ([LiteLLM issue #24320](https://github.com/BerriAI/litellm/issues/24320)). AGORA catches it.
+
+---
+
+## Live demo — 30 seconds to prove resilience
+
+```bash
+bun install
+bun start          # http://localhost:8787
+```
+
+Open the dashboard, then click any chaos button:
+
+| Button | Failure injected | What AGORA does | Proof |
+|---|---|---|---|
+| **Lost Agent** | Builder agent disappears | Watchdog detects → Recovery Coordinator takes over | Handoff Receipt: `failureKind: lost_agent` |
+| **Timeout** | Builder agent times out | Watchdog detects stall → task state reconstructed from ledger | Handoff Receipt: `failureKind: timeout` |
+| **Bad Output** | Builder produces invalid output | Verifier rejects → Critic flags → replanned | Handoff Receipt: `failureKind: bad_output` |
+| **Context Loss** | Builder loses conversation history | Ledger replay restores context | Handoff Receipt: `failureKind: stale_context` |
+| **Reset** | Restore all agents to healthy | — | Dashboard returns to green |
+
+The dashboard auto-refreshes every 1.5 seconds. No page reload needed.
+
+---
+
+## Architecture
+
+```
+User Request
+    │
+    ▼
+┌─────────────────────────────────────────────────────┐
+│  AGORA Control Plane                                 │
+│                                                     │
+│  Planner ──► Researcher ──► Builder ──► Verifier    │
+│      │           │              │           │        │
+│      └───────────┴──────────────┴───────────┘        │
+│                       │                             │
+│               Shared Blackboard                     │
+│            (Task Ledger + Events)                   │
+│                       │                             │
+│              Watchdog (health monitor)              │
+│                       │ (on failure)                │
+│              Recovery Coordinator                   │
+│                       │                             │
+│              Handoff Receipt ◄── Critic             │
+└─────────────────────────────────────────────────────┘
+    │
+    ▼
+TrueFoundry AI Gateway → AWS Bedrock (with L0-L6 resilience)
+```
+
+---
+
+## Verify in 5 minutes
+
+```bash
+bun install
+bun test                                # 101 tests, 0 fail
+bun run src/agora/demo.ts               # full handoff receipt printed to stdout
+bun start                               # live dashboard at http://localhost:8787
+bun run examples/bedrock-demo.ts        # end-to-end L4 + Bedrock demo
+```
+
+AGORA ships **4 verified improvements** over the current industry baseline:
+
+| ID | Improvement | Source |
+|---|---|---|
+| **C1** | AWS Bedrock `bedrock-runtime` vs `bedrock-mantle` endpoint split + throttle classification | AWS Bedrock release 2026-05-27 |
+| **C3** | ListSpans-aware Guardrail Receipt — per-policy assessment on `GuardrailIntervention` | AWS Bedrock release 2026-05-22 |
+| **C4** | MCP STDIO transport quarantine (CVSS 9.8 RCE) + TOFU origin pin | CVE 2026-04, ~200K servers affected |
+| **C6** | AIVS-format signed Handoff Receipt (Ed25519 + SHA-256 hash chain) | IETF draft-stone-aivs-00 |
+
+---
+
+## Quick start
+
+```bash
+bun install
+cp .env.example .env.local
+# fill in TRUEFOUNDRY_API_KEY from https://app.truefoundry.com
+
+bun start          # AGORA dashboard: http://localhost:8787
+bun run dev        # development mode with hot reload
+```
+
+### API endpoints
+
+| Method | Path | Purpose |
+|---|---|---|
+| `GET` | `/` | AGORA dashboard (HTML) |
+| `GET` | `/api/state` | current agent mesh state (JSON) |
+| `POST` | `/api/chaos/:kind` | inject failure: `lost_agent` / `timeout` / `bad_output` / `stale_context` |
+| `GET` | `/health` | uptime probe |
+| `POST` | `/v1/chat/completions` | OpenAI-compat chat (stream + non-stream) with full L0-L6 resilience |
+
+---
+
+## Tech stack
+
+- **Runtime**: [Bun](https://bun.sh) (≥1.3) + TypeScript (strict)
+- **Server**: [Hono](https://hono.dev/)
+- **LLM routing**: TrueFoundry AI Gateway → AWS Bedrock (Claude / Titan / Llama)
+- **Agent coordination**: Custom AGORA Agent Mesh (Task Ledger + Watchdog + Handoff Receipt)
+- **MCP**: [TrueFoundry MCP Gateway](https://www.truefoundry.com/mcp-gateway) + Guardrails
+- **Chaos**: Chaos buttons (deterministic) + [Toxiproxy](https://github.com/Shopify/toxiproxy) (network-level)
+- **Observability**: TrueFoundry AI Monitoring (OTel-compatible)
+- **Lint/format**: [Biome](https://biomejs.dev/)
+
+---
+
+## Hackathon submission
+
+| Field | Detail |
+|---|---|
+| Hackathon | [Resilient Agents - Online Hackathon](https://www.builderbase.com/v2/event/resilient-agents-online-hackathon) |
+| Organizer | TrueFoundry × AWS Bedrock |
+| Submission deadline | 2026-06-08 15:30 UTC |
+| Team | Solo — Hokuto Torigoe |
+
+## Acknowledgments
+
+TrueFoundry for sponsoring the challenge. Sai Krishna (TF DevRel) for clarifying that direct Gateway integration is Criteria #1. The [LiteLLM issue #24320 thread](https://github.com/BerriAI/litellm/issues/24320) for documenting the industry-wide `credit_balance_too_low` gap that AGORA L4 closes.
+
+## License
+
+MIT — see [LICENSE](./LICENSE).
