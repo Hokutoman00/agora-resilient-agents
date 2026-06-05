@@ -91,8 +91,11 @@ export async function runAgentTask(topic: string): Promise<RunResult> {
     'chaos_window',
   );
   chaosWindowOpen = true;
-  await delay(CHAOS_WINDOW_MS);
-  chaosWindowOpen = false;
+  try {
+    await delay(CHAOS_WINDOW_MS);
+  } finally {
+    chaosWindowOpen = false;
+  }
 
   const chaos = pendingChaos;
   pendingChaos = null;

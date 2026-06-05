@@ -124,8 +124,8 @@ function renderDashboard(state: DashboardState): string {
     .agent { min-height:94px; display:grid; align-content:space-between; gap:14px; padding:12px 14px; border-left-width:4px; }
     .agent.healthy { border-left-color:var(--healthy); } .agent.busy { border-left-color:var(--busy); }
     .agent.failed { border-left-color:var(--failed); } .agent.degraded { border-left-color:var(--degraded); }
-    .agent strong { display:block; font-size:13px; font-weight:700; }
-    .agent span { display:block; margin-top:3px; color:var(--muted); font-size:11px; }
+    .agent strong { display:block; font-size:13px; font-weight:700; overflow-wrap:anywhere; }
+    .agent span { display:block; margin-top:3px; color:var(--muted); font-size:11px; overflow-wrap:anywhere; }
     .agent em { display:flex; align-items:center; color:var(--status-color,var(--muted)); font-style:normal; font-size:11px; text-transform:uppercase; }
     .agent em i { width:6px; height:6px; border-radius:50%; display:inline-block; margin-right:6px; background:currentColor; }
     .agent.healthy em { color:var(--healthy); } .agent.busy em { color:var(--busy); }
@@ -177,6 +177,14 @@ function renderDashboard(state: DashboardState): string {
       .agents { grid-template-columns:repeat(2,minmax(0,1fr)); }
       .run-row { grid-template-columns:1fr; }
       header { align-items:flex-start; padding:10px 20px; }
+    }
+    @media (max-width: 420px) {
+      header { padding-left:14px; padding-right:14px; }
+      section, .proof { padding-left:14px; padding-right:14px; }
+      .agents { grid-template-columns:1fr; }
+      .task-meta, .receipt-row { grid-template-columns:1fr; }
+      .timeline li { grid-template-columns:46px 18px 1fr; }
+      .statusbar { left:14px; right:14px; }
     }
   </style>
 </head>
@@ -386,6 +394,16 @@ function proofLine(state: AgoraState): { className: string; text: string } {
 
 function gatewaySuffix(gateway: AgoraState['receipts'][number]['gateway']): string {
   return gateway?.fallback_triggered ? ' via TF Gateway + AWS Bedrock fallback' : '';
+}
+
+function chaosIndicator(control: ReturnType<typeof getChaosControlState>): { className: string; text: string } {
+  if (control.chaos_window_open) {
+    return { className: 'ready', text: 'READY: inject provider failure into active run' };
+  }
+  if (control.pending_chaos) {
+    return { className: 'armed', text: `ARMED: ${failureLabel(control.pending_chaos)} on next run` };
+  }
+  return { className: '', text: 'STANDBY: run task, then inject provider failure' };
 }
 
 function failureLabel(kind: string): string {
