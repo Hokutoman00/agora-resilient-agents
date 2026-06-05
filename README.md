@@ -173,7 +173,8 @@ bun run dev        # development mode with hot reload
 - **Server**: [Hono](https://hono.dev/)
 - **LLM routing**: TrueFoundry AI Gateway → AWS Bedrock (Claude / Titan / Llama)
 - **Agent coordination**: Custom AGORA Agent Mesh (Task Ledger + Watchdog + Handoff Receipt)
-- **MCP**: [TrueFoundry MCP Gateway](https://www.truefoundry.com/mcp-gateway) + Guardrails
+- **Guardrails**: TrueFoundry-compatible `localInputCheck` on all agent inputs and outputs — blocks unsafe content, degrades task status when blocked
+- **MCP Gateway**: AGORA's architecture is designed for TrueFoundry MCP Gateway integration (tool classification via `READ_HEDGE` / `WRITE_TIED`). A live TrueFoundry MCP Gateway endpoint was not available in the shared hackathon tenant during the submission window; the integration layer exists in `src/mcp/` and is wired to activate when `TRUEFOUNDRY_MCP_ENDPOINT` is configured.
 - **Chaos**: Chaos buttons (deterministic) + [Toxiproxy](https://github.com/Shopify/toxiproxy) (network-level)
 - **Observability**: TrueFoundry AI Monitoring (OTel-compatible)
 - **Lint/format**: [Biome](https://biomejs.dev/)
