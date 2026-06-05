@@ -72,13 +72,25 @@ Open the dashboard, then click any chaos button:
 
 | Button | Failure injected | What AGORA does | Proof |
 |---|---|---|---|
-| **Lost Agent** | Builder agent disappears | Watchdog detects → Recovery Coordinator takes over | Handoff Receipt: `failureKind: lost_agent` |
-| **Timeout** | Builder agent times out | Watchdog detects stall → task state reconstructed from ledger | Handoff Receipt: `failureKind: timeout` |
-| **Bad Output** | Builder produces invalid output | Verifier rejects → Critic flags → replanned | Handoff Receipt: `failureKind: bad_output` |
-| **Context Loss** | Builder loses conversation history | Ledger replay restores context | Handoff Receipt: `failureKind: stale_context` |
+| **Provider Outage** | Builder agent disappears | Watchdog detects → Recovery Coordinator takes over | Handoff Receipt: `failureKind: lost_agent` |
+| **Rate Limit Exceeded** | Builder agent times out | Watchdog detects stall → task state reconstructed from ledger | Handoff Receipt: `failureKind: timeout` |
+| **Malformed Response** | Builder produces invalid output | Verifier rejects → Critic flags → replanned | Handoff Receipt: `failureKind: bad_output` |
+| **Context Window Exceeded** | Builder loses conversation history | Ledger replay restores context | Handoff Receipt: `failureKind: stale_context` |
 | **Reset** | Restore all agents to healthy | — | Dashboard returns to green |
 
 The dashboard auto-refreshes every 1.5 seconds. No page reload needed.
+
+### What `fallback_triggered: true` proves
+
+AGORA's Virtual Model routes requests: **OpenAI GPT-4 (primary) → AWS Bedrock Claude Opus (fallback)**. When the demo shows `fallback_triggered: true` in the Handoff Receipt, it means TrueFoundry AI Gateway's own L2/L3 fallback fired — the primary provider failed and AWS Bedrock stepped in automatically. This demonstrates two layers of resilience simultaneously: AGORA's agent-level handoff and TF Gateway's provider-level fallback.
+
+```json
+"gateway": {
+  "gateway_mode": "live",
+  "model_used": "vahana-virtual-model/vahana-virtual-model",
+  "fallback_triggered": true
+}
+```
 
 ---
 

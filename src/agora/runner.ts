@@ -28,9 +28,16 @@ export async function runAgentTask(topic: string): Promise<RunResult> {
   const runId = `run-${Date.now()}`;
   const artifacts: RunResult['artifacts'] = {};
   const gateway = gatewayEvidence(false);
+  const inputGuardrail = localInputCheck(topic, 'input');
+  const guardedTopic = applyGuardrailToText(topic, inputGuardrail);
+  const guardrails = { input: inputGuardrail } as {
+    input: GuardrailReport;
+    report?: GuardrailReport;
+    verdict?: GuardrailReport;
+  };
 
   activeLedger.reset();
-  activeLedger.startTask(TASK_ID, topic, 'planner-1');
+  activeLedger.startTask(TASK_ID, guardedTopic, 'planner-1');
   activeLedger.event(
     'info',
     `Gateway evidence: ${JSON.stringify(gateway)}`,
@@ -38,14 +45,6 @@ export async function runAgentTask(topic: string): Promise<RunResult> {
     TASK_ID,
     'gateway',
   );
-
-  const inputGuardrail = localInputCheck(topic, 'input');
-  let guardedTopic = applyGuardrailToText(topic, inputGuardrail);
-  const guardrails = { input: inputGuardrail } as {
-    input: GuardrailReport;
-    report?: GuardrailReport;
-    verdict?: GuardrailReport;
-  };
   activeLedger.saveArtifact(TASK_ID, 'planner-1', 'guardrail_decision', serializeGuardrails(guardrails));
   activeLedger.event(
     inputGuardrail.decision === 'block' ? 'warn' : 'info',
@@ -60,7 +59,7 @@ export async function runAgentTask(topic: string): Promise<RunResult> {
     activeLedger.degrade(TASK_ID, 'input guardrail blocked the task');
     return {
       runId,
-      topic,
+      topic: guardedTopic,
       status: 'degraded',
       artifacts,
       ledger: activeLedger.snapshot(),
@@ -105,7 +104,6 @@ export async function runAgentTask(topic: string): Promise<RunResult> {
 
     activeLedger.markAgent('recovery-1', 'busy', TASK_ID);
     report = await runBuilder(research, '障害前の Builder 出力は未完了です。');
-    activeLedger.saveArtifact(TASK_ID, 'recovery-1', 'report', report);
     activeLedger.markAgent('recovery-1', 'healthy');
     activeLedger.event('success', 'Recovery complete. Report generated.', 'recovery-1', TASK_ID);
   } else {

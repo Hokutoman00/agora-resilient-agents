@@ -5,7 +5,7 @@ import type { AgoraState, FailureKind, TaskRecord } from './types.js';
 
 const app = new Hono();
 const DEFAULT_TASK =
-  'A major LLM provider is unavailable. Analyze the top 3 competitors also affected and draft a customer communication plan.';
+  'A major AI API provider (OpenAI-compatible) is experiencing an outage. Analyze the top 3 competing AI providers also affected, compare their resilience postures, and draft a customer communication plan.';
 const TASK_PRESETS = [
   {
     label: '競合影響分析',
@@ -161,7 +161,10 @@ function renderDashboard(state: AgoraState): string {
 <body>
   <header>
     <h1>AGORA</h1>
-    <div class="live ${modeClass}"><i></i>${modeLabel}</div>
+    <div style="display:flex;align-items:center;gap:16px">
+      <span style="font-size:11px;color:var(--muted);letter-spacing:.08em">TrueFoundry AI Gateway · AWS Bedrock</span>
+      <div class="live ${modeClass}"><i></i>${modeLabel}</div>
+    </div>
   </header>
   <div class="proof ${proof.className}" id="proof"><span>${escapeHtml(proof.text)}</span></div>
   <main>
