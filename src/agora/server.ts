@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
-import { activeLedger, runAgentTask, setPendingChaos } from './runner.js';
+import { activeLedger, getChaosControlState, runAgentTask, setPendingChaos } from './runner.js';
 import type { AgoraState, FailureKind, TaskRecord } from './types.js';
 
 const app = new Hono();
@@ -23,13 +23,26 @@ const TASK_PRESETS = [
 
 app.use('*', cors());
 
-app.get('/api/state', c => c.json(activeLedger.snapshot()));
+type DashboardState = AgoraState & { control: ReturnType<typeof getChaosControlState> };
+
+function currentState(): DashboardState {
+  return { ...activeLedger.snapshot(), control: getChaosControlState() };
+}
+
+app.get('/api/state', c => c.json(currentState()));
 
 app.post('/api/chaos/:kind', c => {
   const kind = c.req.param('kind') as FailureKind;
+  const wasOpen = getChaosControlState().chaos_window_open;
   setPendingChaos(kind || 'lost_agent');
-  activeLedger.event('warn', `Chaos armed: ${kind}`, 'watchdog', undefined, 'watchdog');
-  return c.json({ ok: true, armed: kind, state: activeLedger.snapshot() });
+  activeLedger.event(
+    'warn',
+    wasOpen ? `Chaos injected into active run: ${kind}` : `Chaos armed for next run: ${kind}`,
+    'watchdog',
+    undefined,
+    'watchdog',
+  );
+  return c.json({ ok: true, mode: wasOpen ? 'immediate' : 'armed', armed: kind, state: currentState() });
 });
 
 app.post('/api/run', async c => {
@@ -44,11 +57,14 @@ app.post('/api/run', async c => {
   return c.json(result);
 });
 
-app.post('/api/reset', c => c.json({ ok: true, state: activeLedger.reset() }));
+app.post('/api/reset', c => {
+  activeLedger.reset();
+  return c.json({ ok: true, state: currentState() });
+});
 
-app.get('/', c => c.html(renderDashboard(activeLedger.snapshot())));
+app.get('/', c => c.html(renderDashboard(currentState())));
 
-function renderDashboard(state: AgoraState): string {
+function renderDashboard(state: DashboardState): string {
   const startedAt = state.events[0]?.at ?? new Date().toISOString();
   const modeLabel = process.env.TRUEFOUNDRY_API_KEY?.trim() ? 'LIVE (TF Gateway)' : 'SIMULATION';
   const modeClass = process.env.TRUEFOUNDRY_API_KEY?.trim() ? 'live-mode' : 'sim-mode';
@@ -89,10 +105,12 @@ function renderDashboard(state: AgoraState): string {
     }
     * { box-sizing:border-box; }
     body { margin:0; min-height:100vh; background:var(--bg); color:var(--text); font-size:13px; }
-    header { height:58px; display:flex; align-items:center; justify-content:space-between; padding:0 32px; border-bottom:1px solid var(--border); }
+    header { min-height:58px; display:flex; align-items:center; justify-content:space-between; gap:20px; padding:10px 32px; border-bottom:1px solid var(--border); }
     h1 { margin:0; font-size:28px; line-height:1; letter-spacing:.15em; font-weight:700; }
+    .header-right { display:grid; justify-items:end; gap:4px; min-width:0; }
     .live { display:flex; align-items:center; gap:7px; color:var(--accent); font-size:12px; letter-spacing:.12em; }
     .live i { width:7px; height:7px; border-radius:50%; background:var(--accent); display:block; }
+    .platform { color:var(--muted); font-size:11px; text-align:right; letter-spacing:.08em; }
     .sim-mode { color:#8fa6c9; } .sim-mode i { background:#8fa6c9; }
     .proof { min-height:36px; display:flex; align-items:center; padding:0 32px; border-bottom:1px solid var(--border); background:var(--surface); color:var(--muted); }
     .proof.success { color:#8bd6a8; } .proof.warn { color:#e0b060; }
@@ -113,6 +131,9 @@ function renderDashboard(state: AgoraState): string {
     .agent.healthy em { color:var(--healthy); } .agent.busy em { color:var(--busy); }
     .agent.failed em { color:var(--failed); } .agent.degraded em { color:var(--degraded); }
     .controls { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+    .chaos-indicator { display:inline-flex; align-items:center; min-height:26px; border:1px solid var(--border); color:var(--muted); padding:5px 8px; margin-bottom:8px; font-size:11px; }
+    .chaos-indicator.ready { border-color:#6a4a14; color:var(--accent); }
+    .chaos-indicator.armed { border-color:#5a2020; color:#e07070; }
     .run-panel { display:grid; gap:8px; }
     .run-row { display:grid; grid-template-columns:1fr auto; gap:8px; }
     .preset-row { display:flex; flex-wrap:wrap; gap:7px; }
@@ -155,15 +176,16 @@ function renderDashboard(state: AgoraState): string {
       section, .proof { padding-left:20px; padding-right:20px; }
       .agents { grid-template-columns:repeat(2,minmax(0,1fr)); }
       .run-row { grid-template-columns:1fr; }
+      header { align-items:flex-start; padding:10px 20px; }
     }
   </style>
 </head>
 <body>
   <header>
     <h1>AGORA</h1>
-    <div style="display:flex;align-items:center;gap:16px">
-      <span style="font-size:11px;color:var(--muted);letter-spacing:.08em">TrueFoundry AI Gateway · AWS Bedrock</span>
+    <div class="header-right">
       <div class="live ${modeClass}"><i></i>${modeLabel}</div>
+      <div class="platform">Powered by TrueFoundry AI Gateway + AWS Bedrock fallback</div>
     </div>
   </header>
   <div class="proof ${proof.className}" id="proof"><span>${escapeHtml(proof.text)}</span></div>
@@ -183,6 +205,7 @@ function renderDashboard(state: AgoraState): string {
           <div class="preset-row">${presetButtons}</div>
         </div>
         <h2 class="section-title">Chaos Injection</h2>
+        <div class="chaos-indicator ${chaosIndicator(state.control).className}" id="chaosIndicator">${escapeHtml(chaosIndicator(state.control).text)}</div>
         <div class="controls">
           <button class="chaos-btn" onclick="injectChaos('lost_agent')">⚡ Provider Outage</button>
           <button class="chaos-btn" onclick="injectChaos('timeout')">⏱ Rate Limit Exceeded</button>
@@ -223,17 +246,24 @@ function renderDashboard(state: AgoraState): string {
       ['gateway mode', r.gateway?.gateway_mode || 'unknown'],
       ['model used', r.gateway?.model_used || 'unknown'],
       ['fallback triggered', String(Boolean(r.gateway?.fallback_triggered))],
+      ['fallback meaning', r.gateway?.fallback_triggered ? 'TF Gateway fallback chain engaged; AWS Bedrock carried the request' : 'primary route or simulation path'],
       ['completed parts', (r.completedParts || []).join(', ') || 'none'],
       ['failed parts', (r.failedParts || []).join(', ') || 'none'],
       ['evidence seen', (r.evidenceSeen || []).join(' / ') || 'none'],
     ].map(([k, v]) => '<div class="receipt-row"><div class="receipt-key">' + esc(k) + '</div><div class="receipt-val">' + esc(v) + '</div></div>').join('');
     const renderReceipt = r => '<article class="receipt">' + receiptRows(r) + '<details><summary>view raw JSON</summary><pre>' + esc(JSON.stringify(r, null, 2)) + '</pre></details></article>';
+    const chaosIndicator = control => {
+      if (control?.chaos_window_open) return { className: 'ready', text: 'READY: inject provider failure into active run' };
+      if (control?.pending_chaos) return { className: 'armed', text: 'ARMED: ' + failureLabel(control.pending_chaos) + ' on next run' };
+      return { className: '', text: 'STANDBY: run task, then inject provider failure' };
+    };
     const failureLabel = kind => ({ lost_agent: 'Provider Outage', timeout: 'Rate Limit Exceeded', bad_output: 'Malformed Response', stale_context: 'Context Window Exceeded' }[kind] || kind || 'provider failure');
+    const gatewaySuffix = gateway => gateway?.fallback_triggered ? ' via TF Gateway + AWS Bedrock fallback' : '';
     const proofFromState = state => {
       const task = state.tasks?.[0];
       const receipt = state.receipts?.[state.receipts.length - 1];
       if (task?.status === 'degraded') return { className: 'warn', text: 'User deliverable degraded by quality gate; output was not falsely marked complete' };
-      if (receipt && task?.status === 'completed') return { className: 'success', text: '✓ User deliverable preserved after ' + failureLabel(receipt.failureKind) };
+      if (receipt && task?.status === 'completed') return { className: 'success', text: '✓ User deliverable preserved after ' + failureLabel(receipt.failureKind) + gatewaySuffix(receipt.gateway) };
       if (task?.status === 'completed') return { className: 'success', text: '✓ User deliverable completed and quality-checked' };
       return { className: '', text: 'Run a user deliverable, inject provider failure, and verify the final UX is preserved' };
     };
@@ -270,6 +300,10 @@ function renderDashboard(state: AgoraState): string {
       const proofEl = document.getElementById('proof');
       proofEl.className = 'proof ' + proof.className;
       proofEl.innerHTML = '<span>' + esc(proof.text) + '</span>';
+      const chaos = chaosIndicator(state.control);
+      const chaosEl = document.getElementById('chaosIndicator');
+      chaosEl.className = 'chaos-indicator ' + chaos.className;
+      chaosEl.textContent = chaos.text;
       document.getElementById('agents').innerHTML = state.agents.map(a => '<article class="agent ' + esc(a.status) + '" data-agent-id="' + esc(a.id) + '"><div><strong>' + esc(a.label) + '</strong><span>' + esc(a.role) + '</span></div><em><i></i>' + esc(a.status) + '</em></article>').join('');
       document.getElementById('tasks').innerHTML = state.tasks.map(renderTask).join('');
       document.getElementById('receipts').innerHTML = state.receipts.length ? state.receipts.map(renderReceipt).join('') : '<p class="empty">No handoff yet. Inject chaos to prove recovery.</p>';
@@ -312,6 +346,12 @@ function renderReceipt(receipt: AgoraState['receipts'][number]): string {
     ['gateway mode', receipt.gateway?.gateway_mode ?? 'unknown'],
     ['model used', receipt.gateway?.model_used ?? 'unknown'],
     ['fallback triggered', String(Boolean(receipt.gateway?.fallback_triggered))],
+    [
+      'fallback meaning',
+      receipt.gateway?.fallback_triggered
+        ? 'TF Gateway fallback chain engaged; AWS Bedrock carried the request'
+        : 'primary route or simulation path',
+    ],
     ['completed parts', receipt.completedParts.join(', ') || 'none'],
     ['failed parts', receipt.failedParts.join(', ') || 'none'],
     ['evidence seen', receipt.evidenceSeen.join(' / ') || 'none'],
@@ -332,7 +372,7 @@ function proofLine(state: AgoraState): { className: string; text: string } {
   if (receipt && task?.status === 'completed') {
     return {
       className: 'success',
-      text: `✓ User deliverable preserved after ${failureLabel(receipt.failureKind)}`,
+      text: `✓ User deliverable preserved after ${failureLabel(receipt.failureKind)}${gatewaySuffix(receipt.gateway)}`,
     };
   }
   if (task?.status === 'completed') {
@@ -342,6 +382,10 @@ function proofLine(state: AgoraState): { className: string; text: string } {
     className: '',
     text: 'Run a user deliverable, inject provider failure, and verify the final UX is preserved',
   };
+}
+
+function gatewaySuffix(gateway: AgoraState['receipts'][number]['gateway']): string {
+  return gateway?.fallback_triggered ? ' via TF Gateway + AWS Bedrock fallback' : '';
 }
 
 function failureLabel(kind: string): string {

@@ -7,6 +7,7 @@ import { runVerifier } from './agents/verifier.js';
 import type { FailureKind, GatewayEvidence } from './types.js';
 
 const TASK_ID = 'task-agora-demo';
+const CHAOS_WINDOW_MS = Number(process.env.AGORA_CHAOS_WINDOW_MS ?? 1500);
 
 export type RunResult = {
   runId: string;
@@ -19,9 +20,14 @@ export type RunResult = {
 export const activeLedger = new TaskLedger();
 
 let pendingChaos: FailureKind | null = null;
+let chaosWindowOpen = false;
 
 export function setPendingChaos(kind: FailureKind): void {
   pendingChaos = kind;
+}
+
+export function getChaosControlState(): { chaos_window_open: boolean; pending_chaos: FailureKind | null } {
+  return { chaos_window_open: chaosWindowOpen, pending_chaos: pendingChaos };
 }
 
 export async function runAgentTask(topic: string): Promise<RunResult> {
@@ -77,6 +83,17 @@ export async function runAgentTask(topic: string): Promise<RunResult> {
   activeLedger.markAgent('builder-1', 'busy', TASK_ID);
   activeLedger.event('info', 'Builder synthesizing report', 'builder-1', TASK_ID);
 
+  activeLedger.event(
+    'info',
+    `Mid-task chaos window open (${CHAOS_WINDOW_MS}ms)`,
+    'watchdog',
+    TASK_ID,
+    'chaos_window',
+  );
+  chaosWindowOpen = true;
+  await delay(CHAOS_WINDOW_MS);
+  chaosWindowOpen = false;
+
   const chaos = pendingChaos;
   pendingChaos = null;
 
@@ -88,12 +105,20 @@ export async function runAgentTask(topic: string): Promise<RunResult> {
     const task = activeLedger.snapshot().tasks.find(t => t.id === TASK_ID);
     if (!task) throw new Error(`unknown task: ${TASK_ID}`);
 
+    const recoveryGateway = gatewayEvidence(true);
+    activeLedger.event(
+      'success',
+      `TF Gateway fallback chain engaged: ${recoveryGateway.model_used} via AWS Bedrock fallback`,
+      'recovery-1',
+      TASK_ID,
+      'gateway',
+    );
     const receipt = buildHandoffReceipt({
       failedAgentId: 'builder-1',
       takeoverAgentId: 'recovery-1',
       task,
       failureKind: chaos,
-      gateway: gatewayEvidence(true),
+      gateway: recoveryGateway,
       evidenceSeen: [
         `research artifact preserved in shared ledger (${research.length} chars)`,
         `watchdog detected ${chaos} on builder-1`,
@@ -140,7 +165,53 @@ export async function runAgentTask(topic: string): Promise<RunResult> {
   artifacts.report = report;
 
   activeLedger.markAgent('verifier-1', 'busy', TASK_ID);
-  const verification = await runVerifier(report);
+  let verification = await runVerifier(report);
+  if (!verification.overall_pass) {
+    activeLedger.saveArtifact(TASK_ID, 'verifier-1', 'verdict_attempt_1', JSON.stringify(verification, null, 2));
+    activeLedger.event(
+      'warn',
+      `Verifier requested one repair pass: ${verification.summary}`,
+      'verifier-1',
+      TASK_ID,
+      'quality_gate',
+    );
+
+    const repairAgentId = chaos ? 'recovery-1' : 'builder-1';
+    activeLedger.markAgent(repairAgentId, 'busy', TASK_ID);
+    let repairedReport = await runBuilder(
+      research,
+      `Verifier repair request: ${verification.summary}\n\nCurrent report:\n${report}`,
+    );
+    const repairedReportGuardrail = localInputCheck(repairedReport, 'output');
+    guardrails.report = repairedReportGuardrail;
+    repairedReport = applyGuardrailToText(repairedReport, repairedReportGuardrail);
+    activeLedger.saveArtifact(TASK_ID, 'planner-1', 'guardrail_decision', serializeGuardrails(guardrails));
+    activeLedger.event(
+      repairedReportGuardrail.decision === 'block' ? 'warn' : 'info',
+      `Repaired report guardrail decision: ${repairedReportGuardrail.decision}`,
+      'planner-1',
+      TASK_ID,
+      'guardrail',
+    );
+    if (repairedReportGuardrail.decision === 'block') {
+      activeLedger.saveArtifact(TASK_ID, 'guardrail-1', 'blocked_report', repairedReport);
+      activeLedger.degrade(TASK_ID, 'repaired report guardrail blocked the output');
+      artifacts.report = repairedReport;
+      artifacts.guardrail = serializeGuardrails(guardrails);
+      return {
+        runId,
+        topic: guardedTopic,
+        status: 'degraded',
+        artifacts,
+        ledger: activeLedger.snapshot(),
+      };
+    }
+    report = repairedReport;
+    activeLedger.saveArtifact(TASK_ID, repairAgentId, 'report', report);
+    activeLedger.markAgent(repairAgentId, 'healthy');
+    activeLedger.event('success', 'Repair pass complete. Re-running verifier.', repairAgentId, TASK_ID, 'quality_gate');
+    verification = await runVerifier(report);
+  }
   let verdict = JSON.stringify(verification, null, 2);
   const verdictGuardrail = localInputCheck(verdict, 'output');
   guardrails.verdict = verdictGuardrail;
@@ -182,6 +253,11 @@ export async function runAgentTask(topic: string): Promise<RunResult> {
     artifacts,
     ledger: activeLedger.snapshot(),
   };
+}
+
+function delay(ms: number): Promise<void> {
+  if (ms <= 0) return Promise.resolve();
+  return new Promise(resolve => setTimeout(resolve, ms));
 }
 
 function applyGuardrailToText(text: string, report: GuardrailReport): string {
