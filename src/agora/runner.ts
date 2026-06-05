@@ -2,6 +2,7 @@ import { applyRedactions, localInputCheck, type GuardrailReport } from '../aegis
 import { buildHandoffReceipt } from './handoff-receipt.js';
 import { TaskLedger } from './ledger.js';
 import { runBuilder } from './agents/builder.js';
+import { runCritic, type CriticFeedback } from './agents/critic.js';
 import { runResearcher } from './agents/researcher.js';
 import { runVerifier } from './agents/verifier.js';
 import type { FailureKind, GatewayEvidence } from './types.js';
@@ -13,7 +14,7 @@ export type RunResult = {
   runId: string;
   topic: string;
   status: 'completed' | 'failed' | 'recovered' | 'degraded';
-  artifacts: { research?: string; report?: string; verdict?: string; guardrail?: string };
+  artifacts: { research?: string; report?: string; critic?: string; verdict?: string; guardrail?: string };
   ledger: ReturnType<TaskLedger['snapshot']>;
 };
 
@@ -39,6 +40,7 @@ export async function runAgentTask(topic: string): Promise<RunResult> {
   const guardrails = { input: inputGuardrail } as {
     input: GuardrailReport;
     report?: GuardrailReport;
+    critic?: GuardrailReport;
     verdict?: GuardrailReport;
   };
 
@@ -167,6 +169,29 @@ export async function runAgentTask(topic: string): Promise<RunResult> {
   activeLedger.saveArtifact(TASK_ID, chaos ? 'recovery-1' : 'builder-1', 'report', report);
   artifacts.report = report;
 
+  const criticResult = await runCriticLoop({
+    topic: guardedTopic,
+    research,
+    report,
+    currentOwnerId: chaos ? 'recovery-1' : 'builder-1',
+    guardrails,
+  });
+  if (criticResult.status === 'degraded') {
+    artifacts.report = criticResult.report;
+    artifacts.critic = JSON.stringify(criticResult.feedback, null, 2);
+    artifacts.guardrail = serializeGuardrails(guardrails);
+    return {
+      runId,
+      topic: guardedTopic,
+      status: 'degraded',
+      artifacts,
+      ledger: activeLedger.snapshot(),
+    };
+  }
+  report = criticResult.report;
+  artifacts.report = report;
+  artifacts.critic = JSON.stringify(criticResult.feedback, null, 2);
+
   activeLedger.markAgent('verifier-1', 'busy', TASK_ID);
   let verification = await runVerifier(report);
   if (!verification.overall_pass) {
@@ -184,6 +209,7 @@ export async function runAgentTask(topic: string): Promise<RunResult> {
     let repairedReport = await runBuilder(
       research,
       `Verifier repair request: ${verification.summary}\n\nCurrent report:\n${report}`,
+      'revise',
     );
     const repairedReportGuardrail = localInputCheck(repairedReport, 'output');
     guardrails.report = repairedReportGuardrail;
@@ -263,6 +289,87 @@ function delay(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+async function runCriticLoop(input: {
+  topic: string;
+  research: string;
+  report: string;
+  currentOwnerId: 'builder-1' | 'recovery-1';
+  guardrails: {
+    input: GuardrailReport;
+    report?: GuardrailReport;
+    critic?: GuardrailReport;
+    verdict?: GuardrailReport;
+  };
+}): Promise<
+  | { status: 'ok'; report: string; feedback: CriticFeedback[] }
+  | { status: 'degraded'; report: string; feedback: CriticFeedback[] }
+> {
+  let report = input.report;
+  const feedbackHistory: CriticFeedback[] = [];
+
+  for (let round = 1; round <= 2; round += 1) {
+    activeLedger.markAgent('critic-1', 'busy', TASK_ID);
+    activeLedger.event('info', `Critic reviewing report round ${round}`, 'critic-1', TASK_ID, 'critic_loop');
+    const feedback = await runCritic(input.topic, input.research, report);
+    feedbackHistory.push(feedback);
+    const feedbackJson = JSON.stringify(feedback, null, 2);
+    const criticGuardrail = localInputCheck(feedbackJson, 'output');
+    input.guardrails.critic = criticGuardrail;
+    activeLedger.saveArtifact(TASK_ID, 'critic-1', `critic_round_${round}`, applyGuardrailToText(feedbackJson, criticGuardrail));
+    activeLedger.saveArtifact(TASK_ID, 'planner-1', 'guardrail_decision', serializeGuardrails(input.guardrails));
+    activeLedger.markAgent('critic-1', 'healthy');
+
+    if (criticGuardrail.decision === 'block') {
+      activeLedger.degrade(TASK_ID, 'critic guardrail blocked the review output');
+      return { status: 'degraded', report, feedback: feedbackHistory };
+    }
+
+    if (feedback.severity === 'none') {
+      activeLedger.event('success', `Critic round ${round}: no material issues`, 'critic-1', TASK_ID, 'critic_loop');
+      return { status: 'ok', report, feedback: feedbackHistory };
+    }
+
+    activeLedger.event(
+      feedback.severity === 'major' ? 'warn' : 'info',
+      `Critic round ${round}: ${feedback.issues.length} ${feedback.severity} issue(s), requesting builder revision`,
+      'critic-1',
+      TASK_ID,
+      'critic_loop',
+    );
+
+    activeLedger.markAgent(input.currentOwnerId, 'busy', TASK_ID);
+    let revisedReport = await runBuilder(
+      input.research,
+      `Critic round ${round} feedback:\n${feedback.revised_guidance}\n\nIssues:\n${feedback.issues.map(issue => `- ${issue}`).join('\n')}\n\nCurrent report:\n${report}`,
+      'revise',
+    );
+    const reportGuardrail = localInputCheck(revisedReport, 'output');
+    input.guardrails.report = reportGuardrail;
+    revisedReport = applyGuardrailToText(revisedReport, reportGuardrail);
+    activeLedger.saveArtifact(TASK_ID, 'planner-1', 'guardrail_decision', serializeGuardrails(input.guardrails));
+    activeLedger.event(
+      reportGuardrail.decision === 'block' ? 'warn' : 'info',
+      `Critic revision report guardrail decision: ${reportGuardrail.decision}`,
+      'planner-1',
+      TASK_ID,
+      'guardrail',
+    );
+    if (reportGuardrail.decision === 'block') {
+      activeLedger.saveArtifact(TASK_ID, 'guardrail-1', 'blocked_report', revisedReport);
+      activeLedger.degrade(TASK_ID, 'critic-requested revision was blocked by guardrails');
+      return { status: 'degraded', report: revisedReport, feedback: feedbackHistory };
+    }
+
+    report = revisedReport;
+    activeLedger.saveArtifact(TASK_ID, input.currentOwnerId, `report_after_critic_round_${round}`, report);
+    activeLedger.markAgent(input.currentOwnerId, 'healthy');
+    activeLedger.event('success', `Builder revision after Critic round ${round} complete`, input.currentOwnerId, TASK_ID, 'critic_loop');
+  }
+
+  activeLedger.event('warn', 'Critic loop reached max 2 rounds; sending latest report to verifier', 'critic-1', TASK_ID, 'critic_loop');
+  return { status: 'ok', report, feedback: feedbackHistory };
+}
+
 function applyGuardrailToText(text: string, report: GuardrailReport): string {
   if (report.decision === 'redact') return applyRedactions(text, report);
   return text;
@@ -271,14 +378,15 @@ function applyGuardrailToText(text: string, report: GuardrailReport): string {
 function serializeGuardrails(reports: {
   input: GuardrailReport;
   report?: GuardrailReport;
+  critic?: GuardrailReport;
   verdict?: GuardrailReport;
 }): string {
-  const finalDecision = [reports.input, reports.report, reports.verdict]
+  const finalDecision = [reports.input, reports.report, reports.critic, reports.verdict]
     .filter((report): report is GuardrailReport => Boolean(report))
     .map(report => report.decision)
     .includes('block')
     ? 'block'
-    : [reports.input, reports.report, reports.verdict]
+    : [reports.input, reports.report, reports.critic, reports.verdict]
           .filter((report): report is GuardrailReport => Boolean(report))
           .map(report => report.decision)
           .includes('redact')
