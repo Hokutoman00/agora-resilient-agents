@@ -25,13 +25,16 @@
 ┌─────────────────────────────────────────────────────────────────┐
 │  LAYER 2 — Workflow Resilience (AGORA, this submission)        │
 │                                                                 │
-│  Planner → Researcher → Builder ← Watchdog                     │
+│  Planner → Researcher → Builder ←───── Watchdog               │
+│                            ↕ debate (2 rounds)                 │
+│                           Critic                               │
+│                    (issues / guidance)                         │
 │                            ↓                                   │
 │                         Shared Ledger (context survives)        │
 │                            ↓                                   │
 │                    Recovery Coordinator                         │
 │                            ↓                                   │
-│                         Verifier (rubric quality gate)         │
+│                  Verifier (rubric quality gate)                 │
 │                                                                 │
 │  Handles: agent crashes, task stalls, bad outputs              │
 │  Proof: Handoff Receipt (who failed, what was saved, how)      │
