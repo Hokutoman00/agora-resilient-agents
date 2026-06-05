@@ -18,8 +18,11 @@ describe('AGORA critic loop', () => {
 
       expect(result.status).toBe('completed');
       expect(eventTypes).toContain('critic_loop');
+      expect(eventTypes).toContain('mcp_tool');
+      expect(artifactKeys).toContain('planner-1:mcp_tool_audit');
       expect(artifactKeys).toContain('critic-1:critic_round_1');
       expect(artifactKeys).toContain('builder-1:report_after_critic_round_1');
+      expect(result.artifacts.mcp).toContain('READ_HEDGE');
       expect(result.artifacts.critic).toContain('revised_guidance');
       expect(result.artifacts.report).toContain('Builder revised after peer critique');
     } finally {

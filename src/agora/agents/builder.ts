@@ -1,4 +1,5 @@
 import { getDefaultVirtualModel, getTFClient } from '../../aegis/tf-client.js';
+import { shouldUseSimulation } from './runtime.js';
 
 export type BuilderMode = 'draft' | 'recover' | 'revise';
 
@@ -13,7 +14,7 @@ export async function runBuilder(research: string, context?: string, mode: Build
       : `${context}\n\n[Recovery Coordinator completed the report from preserved ledger context]\n\nThe final customer-facing deliverable remains usable because the research artifact survived the provider failure, the report was reconstructed from the same evidence, and the verifier checks the recovered output before marking the task complete.`
     : baseReport;
 
-  if (!process.env.TRUEFOUNDRY_API_KEY?.trim()) return mock;
+  if (shouldUseSimulation()) return mock;
 
   const client = getTFClient();
   const systemPrompt =

@@ -9,6 +9,8 @@
 
 ## 0:00–0:15 — オープニング（ナレーション）
 
+> "Aegis made individual LLM calls resilient. AGORA makes multi-agent workflows resilient."
+
 > "Most AI agent systems fail completely when one agent crashes mid-task.
 > AGORA doesn't."
 
@@ -18,13 +20,13 @@
 
 ## 0:15–0:30 — タスク実行開始
 
-> "We give AGORA a real business task — via TrueFoundry AI Gateway and AWS Bedrock."
+> "We give AGORA a real business task through the TrueFoundry AI Gateway path."
 
 **操作**: 「Run Task」ボタンをクリック（default task または "Provider Outage Impact" プリセット）
 
 **画面**: Researcher → BUSY（黄色）になる
 
-> "Researcher is now calling TrueFoundry AI Gateway — live, against AWS Bedrock."
+> "When a TrueFoundry key is configured, the LLM Gateway call is live. The rest of the demo keeps the same evidence fields and labels any local simulation honestly."
 
 ---
 
@@ -51,9 +53,9 @@
 
 **操作**: Handoff Receipt エリアをズームイン
 
-> "• Failure: rate_limit  
-> • Gateway mode: live  
-> • Fallback triggered: true — AWS Bedrock stepped in  
+> "• Failure: rate_limit
+> • Gateway mode: live when configured, simulation otherwise
+> • MCP and Guardrail evidence: local-compatible audit unless TrueFoundry endpoints are configured
 > • Research preserved: 1,500 characters from the shared ledger"
 
 **画面**: Timeline を下にスクロール
@@ -69,9 +71,9 @@
 > "Verifier rubric: completeness 10, coherence 10, usefulness 10 — pass.
 > The user deliverable was preserved. Not degraded. Proven."
 
-**操作**: 画面右上の「LIVE (TF Gateway)」インジケーターを指差し
+**操作**: Judging Evidence の TF Gateway / MCP Tool Policy / Guardrail 行を見せる
 
-> "TrueFoundry AI Gateway. AWS Bedrock. Guardrails. Real resilience — not a simulation."
+> "TrueFoundry LLM Gateway integration, local-compatible MCP and Guardrail audits, and a real agent-recovery path. No hidden restart. No fake success."
 
 ---
 

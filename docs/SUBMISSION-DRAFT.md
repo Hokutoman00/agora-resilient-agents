@@ -6,6 +6,10 @@ AGORA — Adaptive General-purpose Orchestration for Resilient Agents
 ## Tagline
 When one agent falls, the mesh carries on.
 
+## One-sentence differentiator
+
+**Aegis made individual LLM calls resilient. AGORA makes multi-agent workflows resilient:** shared ledger preserves partial work, Recovery takes over failed agents, Critic revises weak outputs, and Verifier gates completion.
+
 ## What problem does it solve?
 
 Most AI agent systems fail catastrophically when a single agent crashes mid-task. If a worker agent times out while generating a report, all prior work is lost and the pipeline must restart from scratch.
@@ -40,12 +44,18 @@ The Claude + Codex collaborative development system used to build AGORA runs on 
 
 ## Tech stack
 
-- **TrueFoundry AI Gateway** — LLM routing, fallback, and observability (required)
-- **AWS Bedrock** — model access (Claude, Titan, Llama via Bedrock)
-- **TrueFoundry MCP Gateway** — controlled tool access with Guardrails
-- **Bun + TypeScript** — runtime (strict mode, 101 tests passing)
+- **TrueFoundry AI Gateway** — live LLM Gateway path when `TRUEFOUNDRY_API_KEY` is configured
+- **AWS Bedrock-compatible provider routing** — provider chain is external to AGORA and routed through TrueFoundry Virtual Model configuration
+- **TrueFoundry MCP Gateway / Guardrails** — local-compatible audit and policy simulation in this submission; the evidence is labeled simulation unless `TRUEFOUNDRY_MCP_ENDPOINT` and live Guardrails credentials are configured
+- **Bun + TypeScript** — runtime (strict mode, 105 tests passing)
 - **Hono** — dashboard server
 - **Custom Agent Mesh** — Task Ledger (SQLite-backed), Watchdog, Handoff Receipt engine
+
+## Integration truthfulness
+
+- **Verified live:** TrueFoundry LLM Gateway chat completions through the configured Virtual Model.
+- **Not claimed live in this tenant:** TrueFoundry MCP Gateway and TrueFoundry Guardrails, because the available service account did not have the required scopes during final validation.
+- **Still implemented:** AGORA records MCP tool policy evidence (`READ_HEDGE` / `WRITE_TIED`) and local Guardrail checks in the judge packet so the same control points are visible without overstating live connectivity.
 
 ## GitHub
 https://github.com/Hokutoman00/agora-resilient-agents *(to be created)*

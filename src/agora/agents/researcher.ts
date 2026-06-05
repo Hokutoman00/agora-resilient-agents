@@ -1,4 +1,5 @@
 import { getDefaultVirtualModel, getTFClient } from '../../aegis/tf-client.js';
+import { shouldUseSimulation } from './runtime.js';
 
 function mockResearch(topic: string): string {
   return `
@@ -13,7 +14,7 @@ function mockResearch(topic: string): string {
 
 export async function runResearcher(topic: string): Promise<string> {
   const mock = mockResearch(topic);
-  if (!process.env.TRUEFOUNDRY_API_KEY?.trim()) return mock;
+  if (shouldUseSimulation()) return mock;
 
   const client = getTFClient();
   const res = await client.chat.completions.create({

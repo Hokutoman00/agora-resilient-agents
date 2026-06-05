@@ -19,7 +19,7 @@
 - [x] agora-mvp/ コア実装（ledger / watchdog / handoff-receipt）
 - [x] Dashboard server（port 8787）
 - [x] 4種類の Chaos ボタン + Reset + 自動ポーリング
-- [x] bun test 101 pass
+- [x] bun test 105 pass
 - [ ] ダッシュボード フルリデザイン（DASHBOARD-DESIGN-SPEC.md 参照）
 
 ## ユーザー担当（手作業必須）

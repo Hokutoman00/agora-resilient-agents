@@ -1,4 +1,5 @@
 import { getDefaultVirtualModel, getTFClient } from '../../aegis/tf-client.js';
+import { shouldUseSimulation } from './runtime.js';
 
 export type CriticFeedback = {
   issues: string[];
@@ -25,7 +26,7 @@ const CLEAN_FEEDBACK: CriticFeedback = {
 export async function runCritic(topic: string, research: string, report: string): Promise<CriticFeedback> {
   const lower = report.toLowerCase();
   const mock = lower.includes('quantified') && lower.includes('ledger') ? CLEAN_FEEDBACK : MOCK_FEEDBACK;
-  if (!process.env.TRUEFOUNDRY_API_KEY?.trim()) return mock;
+  if (shouldUseSimulation()) return mock;
 
   const client = getTFClient();
   const res = await client.chat.completions.create({

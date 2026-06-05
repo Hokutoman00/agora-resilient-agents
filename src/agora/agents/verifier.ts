@@ -1,4 +1,5 @@
 import { getDefaultVirtualModel, getTFClient } from '../../aegis/tf-client.js';
+import { shouldUseSimulation } from './runtime.js';
 
 export type VerificationRubric = {
   completeness: number;
@@ -18,7 +19,7 @@ const MOCK_VERDICT: VerificationRubric = {
 };
 
 export async function runVerifier(report: string): Promise<VerificationRubric> {
-  if (!process.env.TRUEFOUNDRY_API_KEY?.trim()) return MOCK_VERDICT;
+  if (shouldUseSimulation()) return MOCK_VERDICT;
 
   const client = getTFClient();
   const res = await client.chat.completions.create({

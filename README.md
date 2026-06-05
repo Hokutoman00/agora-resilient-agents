@@ -2,10 +2,12 @@
 
 [![Hackathon](https://img.shields.io/badge/TF_Resilient_Agents-Online_Hackathon_2026-blue)](https://www.builderbase.com/v2/event/resilient-agents-online-hackathon)
 [![Challenge](https://img.shields.io/badge/TrueFoundry-Resilient_Agents_Online-orange)](https://www.builderbase.com/v2/event/resilient-agents-online-hackathon)
-[![Tests](https://img.shields.io/badge/tests-101%20passing-brightgreen)](./tests/unit)
+[![Tests](https://img.shields.io/badge/tests-105%20passing-brightgreen)](./tests/unit)
 [![License](https://img.shields.io/badge/license-MIT-green)](./LICENSE)
 
 > **When one agent falls, the mesh carries on.**
+
+**Aegis made individual LLM calls resilient. AGORA makes multi-agent workflows resilient:** shared ledger preserves partial work, Recovery takes over failed agents, Critic revises weak outputs, and Verifier gates completion.
 
 ## Why AGORA exists — the two layers of resilience
 
@@ -69,6 +71,7 @@ Built on **TrueFoundry AI Gateway** + **AWS Bedrock**.
 | **Shared Blackboard** (Task Ledger) | Agents write progress, evidence, and partial results to a shared ledger — context survives any single agent dying |
 | **Watchdog** | Continuously monitors agent health; detects timeout / bad\_output / lost\_agent / stale\_context |
 | **Recovery Engine** | On failure: reconstruct task state from ledger → reassign to Recovery Coordinator → resume |
+| **MCP Tool Audit** | Classifies read/write tool calls, records `READ_HEDGE` / `WRITE_TIED` policy, and stores tool evidence in the ledger |
 | **Handoff Receipt** | Signed record of who failed, what was completed, what evidence was seen, and how recovery proceeded |
 | **Failure Taxonomy** | `timeout` / `bad_output` / `contradiction` / `stale_context` / `tool_error` / `lost_agent` / `human_boundary` |
 
@@ -110,11 +113,13 @@ Open the dashboard, then click any chaos button:
 | **Context Window Exceeded** | Builder loses conversation history | Ledger replay restores context | Handoff Receipt: `failureKind: stale_context` |
 | **Reset** | Restore all agents to healthy | — | Dashboard returns to green |
 
+For judging, click **Judge Demo** once. It deterministically injects a Builder failure, recovers through the shared ledger, runs the Critic loop, records the Verifier gate, and produces a downloadable **Judge Packet** with a 0-100 readiness score.
+
 The dashboard auto-refreshes every 1.5 seconds. No page reload needed.
 
-### What `fallback_triggered: true` proves
+### What the gateway evidence proves
 
-AGORA's Virtual Model routes requests: **OpenAI GPT-4 (primary) → AWS Bedrock Claude Opus (fallback)**. When the demo shows `fallback_triggered: true` in the Handoff Receipt, it means TrueFoundry AI Gateway's own L2/L3 fallback fired — the primary provider failed and AWS Bedrock stepped in automatically. This demonstrates two layers of resilience simultaneously: AGORA's agent-level handoff and TF Gateway's provider-level fallback.
+AGORA records the gateway evidence separately from the agent-recovery evidence. In a configured live run, `gateway_mode: "live"` means the request reached TrueFoundry AI Gateway. In the deterministic Judge Demo, recovery, MCP audit, and Guardrail evidence are intentionally labeled as local/simulation evidence unless the corresponding TrueFoundry endpoint is configured. The current submission does not claim live TrueFoundry MCP Gateway or live TrueFoundry Guardrails access when those account scopes are unavailable.
 
 ```json
 "gateway": {
@@ -150,7 +155,8 @@ User Request
 └─────────────────────────────────────────────────────┘
     │
     ▼
-TrueFoundry AI Gateway → AWS Bedrock (with L0-L6 resilience)
+TrueFoundry AI Gateway / Virtual Model (live when configured)
+    + local-compatible MCP audit and Guardrail checks
 ```
 
 ---
@@ -159,19 +165,20 @@ TrueFoundry AI Gateway → AWS Bedrock (with L0-L6 resilience)
 
 ```bash
 bun install
-bun test                                # 101 tests, 0 fail
+bun test                                # 105 tests, 0 fail
 bun run src/agora/demo.ts               # full handoff receipt printed to stdout
 bun start                               # live dashboard at http://localhost:8787
 bun run examples/bedrock-demo.ts        # end-to-end L4 + Bedrock demo
 ```
 
-AGORA ships **4 verified improvements** over the current industry baseline:
+AGORA ships **5 verified improvements** over the current industry baseline:
 
 | ID | Improvement | Source |
 |---|---|---|
 | **C1** | AWS Bedrock `bedrock-runtime` vs `bedrock-mantle` endpoint split + throttle classification | AWS Bedrock release 2026-05-27 |
 | **C3** | ListSpans-aware Guardrail Receipt — per-policy assessment on `GuardrailIntervention` | AWS Bedrock release 2026-05-22 |
 | **C4** | MCP STDIO transport quarantine (CVSS 9.8 RCE) + TOFU origin pin | CVE 2026-04, ~200K servers affected |
+| **C5** | AGORA run-level MCP tool audit — `search_outage_signals` is classified as `READ_HEDGE` and recorded in the task ledger | AGORA verified test |
 | **C6** | AIVS-format signed Handoff Receipt (Ed25519 + SHA-256 hash chain) | IETF draft-stone-aivs-00 |
 
 ---
@@ -194,6 +201,8 @@ bun run dev        # development mode with hot reload
 | `GET` | `/` | AGORA dashboard (HTML) |
 | `GET` | `/api/state` | current agent mesh state (JSON) |
 | `POST` | `/api/chaos/:kind` | inject failure: `lost_agent` / `timeout` / `bad_output` / `stale_context` |
+| `POST` | `/api/demo/recovery` | one-call judge demo: inject failure → recover → critique → verify |
+| `GET` | `/api/judge-packet` | current judge-ready scorecard and evidence packet (JSON) |
 | `GET` | `/health` | uptime probe |
 | `POST` | `/v1/chat/completions` | OpenAI-compat chat (stream + non-stream) with full L0-L6 resilience |
 
@@ -203,10 +212,10 @@ bun run dev        # development mode with hot reload
 
 - **Runtime**: [Bun](https://bun.sh) (≥1.3) + TypeScript (strict)
 - **Server**: [Hono](https://hono.dev/)
-- **LLM routing**: TrueFoundry AI Gateway → AWS Bedrock (Claude / Titan / Llama)
+- **LLM routing**: TrueFoundry AI Gateway / Virtual Model path, with AWS Bedrock-compatible provider routing
 - **Agent coordination**: Custom AGORA Agent Mesh (Task Ledger + Watchdog + Handoff Receipt)
-- **Guardrails**: TrueFoundry-compatible `localInputCheck` on all agent inputs and outputs — blocks unsafe content, degrades task status when blocked
-- **MCP Gateway**: AGORA's architecture is designed for TrueFoundry MCP Gateway integration (tool classification via `READ_HEDGE` / `WRITE_TIED`). A live TrueFoundry MCP Gateway endpoint was not available in the shared hackathon tenant during the submission window; the integration layer exists in `src/mcp/` and is wired to activate when `TRUEFOUNDRY_MCP_ENDPOINT` is configured.
+- **Guardrails**: TrueFoundry-compatible local `localInputCheck` on all agent inputs and outputs — blocks unsafe content, degrades task status when blocked, and is labeled local/simulation unless live TrueFoundry Guardrails credentials are available
+- **MCP Gateway**: every AGORA run now records an MCP tool audit artifact (`mcp_tool_audit`) using the same `READ_HEDGE` / `WRITE_TIED` classifier and hedge policy used by the `/v1/mcp/call` API. When `TRUEFOUNDRY_MCP_ENDPOINT` is configured, the artifact marks the endpoint as configured; otherwise it is explicitly labeled simulation rather than falsely claiming live TF MCP Gateway usage.
 - **Chaos**: Chaos buttons (deterministic) + [Toxiproxy](https://github.com/Shopify/toxiproxy) (network-level)
 - **Observability**: TrueFoundry AI Monitoring (OTel-compatible)
 - **Lint/format**: [Biome](https://biomejs.dev/)

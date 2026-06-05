@@ -4,7 +4,9 @@ import { TaskLedger } from './ledger.js';
 import { runBuilder } from './agents/builder.js';
 import { runCritic, type CriticFeedback } from './agents/critic.js';
 import { runResearcher } from './agents/researcher.js';
+import { shouldUseSimulation } from './agents/runtime.js';
 import { runVerifier } from './agents/verifier.js';
+import { collectMCPAuditEvidence } from './mcp-evidence.js';
 import type { FailureKind, GatewayEvidence } from './types.js';
 
 const TASK_ID = 'task-agora-demo';
@@ -14,7 +16,7 @@ export type RunResult = {
   runId: string;
   topic: string;
   status: 'completed' | 'failed' | 'recovered' | 'degraded';
-  artifacts: { research?: string; report?: string; critic?: string; verdict?: string; guardrail?: string };
+  artifacts: { research?: string; mcp?: string; report?: string; critic?: string; verdict?: string; guardrail?: string };
   ledger: ReturnType<TaskLedger['snapshot']>;
 };
 
@@ -39,6 +41,7 @@ export async function runAgentTask(topic: string): Promise<RunResult> {
   const guardedTopic = applyGuardrailToText(topic, inputGuardrail);
   const guardrails = { input: inputGuardrail } as {
     input: GuardrailReport;
+    tool?: GuardrailReport;
     report?: GuardrailReport;
     critic?: GuardrailReport;
     verdict?: GuardrailReport;
@@ -81,6 +84,34 @@ export async function runAgentTask(topic: string): Promise<RunResult> {
   activeLedger.markAgent('researcher-1', 'healthy');
   activeLedger.event('success', 'Research complete', 'researcher-1', TASK_ID);
   artifacts.research = research;
+
+  activeLedger.event('info', 'MCP tool audit starting: search_outage_signals', 'planner-1', TASK_ID, 'mcp_tool');
+  const mcpEvidence = await collectMCPAuditEvidence(guardedTopic, research);
+  let mcpEvidenceJson = JSON.stringify(mcpEvidence, null, 2);
+  const toolGuardrail = localInputCheck(mcpEvidenceJson, 'tool_result');
+  guardrails.tool = toolGuardrail;
+  mcpEvidenceJson = applyGuardrailToText(mcpEvidenceJson, toolGuardrail);
+  activeLedger.saveArtifact(TASK_ID, 'planner-1', 'mcp_tool_audit', mcpEvidenceJson);
+  activeLedger.saveArtifact(TASK_ID, 'planner-1', 'guardrail_decision', serializeGuardrails(guardrails));
+  activeLedger.event(
+    toolGuardrail.decision === 'block' ? 'warn' : 'success',
+    `MCP tool audit: ${mcpEvidence.classification.klass}, winner=${mcpEvidence.hedge_record.winner}, mode=${mcpEvidence.gateway_mode}`,
+    'planner-1',
+    TASK_ID,
+    'mcp_tool',
+  );
+  artifacts.mcp = mcpEvidenceJson;
+  artifacts.guardrail = serializeGuardrails(guardrails);
+  if (toolGuardrail.decision === 'block') {
+    activeLedger.degrade(TASK_ID, 'MCP tool audit blocked by tool-result guardrail');
+    return {
+      runId,
+      topic: guardedTopic,
+      status: 'degraded',
+      artifacts,
+      ledger: activeLedger.snapshot(),
+    };
+  }
 
   activeLedger.markAgent('builder-1', 'busy', TASK_ID);
   activeLedger.event('info', 'Builder synthesizing report', 'builder-1', TASK_ID);
@@ -284,6 +315,25 @@ export async function runAgentTask(topic: string): Promise<RunResult> {
   };
 }
 
+export async function runRecoveryDemo(
+  topic: string,
+  failureKind: FailureKind = 'lost_agent',
+  opts: { forceSimulation?: boolean } = { forceSimulation: true },
+): Promise<RunResult> {
+  const previousForce = process.env.AGORA_FORCE_SIMULATION;
+  if (opts.forceSimulation !== false) process.env.AGORA_FORCE_SIMULATION = '1';
+  try {
+    setPendingChaos(failureKind);
+    return await runAgentTask(topic);
+  } finally {
+    if (previousForce === undefined) {
+      delete process.env.AGORA_FORCE_SIMULATION;
+    } else {
+      process.env.AGORA_FORCE_SIMULATION = previousForce;
+    }
+  }
+}
+
 function delay(ms: number): Promise<void> {
   if (ms <= 0) return Promise.resolve();
   return new Promise(resolve => setTimeout(resolve, ms));
@@ -296,6 +346,7 @@ async function runCriticLoop(input: {
   currentOwnerId: 'builder-1' | 'recovery-1';
   guardrails: {
     input: GuardrailReport;
+    tool?: GuardrailReport;
     report?: GuardrailReport;
     critic?: GuardrailReport;
     verdict?: GuardrailReport;
@@ -377,16 +428,17 @@ function applyGuardrailToText(text: string, report: GuardrailReport): string {
 
 function serializeGuardrails(reports: {
   input: GuardrailReport;
+  tool?: GuardrailReport;
   report?: GuardrailReport;
   critic?: GuardrailReport;
   verdict?: GuardrailReport;
 }): string {
-  const finalDecision = [reports.input, reports.report, reports.critic, reports.verdict]
+  const finalDecision = [reports.input, reports.tool, reports.report, reports.critic, reports.verdict]
     .filter((report): report is GuardrailReport => Boolean(report))
     .map(report => report.decision)
     .includes('block')
     ? 'block'
-    : [reports.input, reports.report, reports.critic, reports.verdict]
+    : [reports.input, reports.tool, reports.report, reports.critic, reports.verdict]
           .filter((report): report is GuardrailReport => Boolean(report))
           .map(report => report.decision)
           .includes('redact')
@@ -396,7 +448,7 @@ function serializeGuardrails(reports: {
 }
 
 function gatewayEvidence(fallbackTriggered: boolean): GatewayEvidence {
-  const live = Boolean(process.env.TRUEFOUNDRY_API_KEY?.trim());
+  const live = !shouldUseSimulation();
   return {
     gateway_mode: live ? 'live' : 'simulation',
     model_used: live
