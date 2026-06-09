@@ -58,10 +58,14 @@ The Claude + Codex collaborative development system used to build AGORA runs on 
 - **Still implemented:** AGORA records MCP tool policy evidence (`READ_HEDGE` / `WRITE_TIED`) and local Guardrail checks in the judge packet so the same control points are visible without overstating live connectivity.
 
 ## GitHub
-https://github.com/Hokutoman00/agora-resilient-agents *(to be created)*
+https://github.com/Hokutoman00/agora-resilient-agents
 
 ## Demo video
-*(to be recorded)*
+https://youtu.be/Tdg8QEwAHXw
+
+## BuilderBase submission
+status: final
+submission_id: 34a8b642
 
 ## Team
 Solo — Hokuto Torigoe
